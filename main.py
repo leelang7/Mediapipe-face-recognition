@@ -1,28 +1,42 @@
 import cv2
 import mediapipe as mp
 import face_recognition
+import numpy as np
+import os
 
-# 얼굴을 인식할 때 기준이 될 이미지를 로드하고 인코딩
+# 얼굴 인식의 기준이 될 이미지 로드 및 인코딩
 known_face_encodings = []
 known_face_names = []
 
-# 예시로 두 명의 인물 이미지를 추가합니다.
-# 'person1.jpg', 'person2.jpg'를 이미지 파일 경로로 변경하십시오.
-image_person1 = face_recognition.load_image_file('person1.jpg')
-face_encoding_person1 = face_recognition.face_encodings(image_person1)[0]
-known_face_encodings.append(face_encoding_person1)
-known_face_names.append('Person1')
+# 예를 들어, 'person1', 'person2' 등으로 인물 구분
+face_image_dirs = {
+    'Person1': ['path/to/person1_img1.jpg', 'path/to/person1_img2.jpg'],
+    'Person2': ['path/to/person2_img1.jpg', 'path/to/person2_img2.jpg'],
+}
 
-image_person2 = face_recognition.load_image_file('person2.jpg')
-face_encoding_person2 = face_recognition.face_encodings(image_person2)[0]
-known_face_encodings.append(face_encoding_person2)
-known_face_names.append('Person2')
+for name, image_paths in face_image_dirs.items():
+    encodings = []
+    for image_path in image_paths:
+        image = face_recognition.load_image_file(image_path)
+        face_encodings = face_recognition.face_encodings(image)
+        
+        if face_encodings:
+            encodings.append(face_encodings[0])
+    
+    if encodings:
+        # 여러 인코딩의 평균 계산
+        mean_encoding = np.mean(encodings, axis=0)
+        known_face_encodings.append(mean_encoding)
+        known_face_names.append(name)
 
 # 영상 장치 초기에 초기화
 cap = cv2.VideoCapture(0)
 
 mp_face_detection = mp.solutions.face_detection
 mp_drawing = mp.solutions.drawing_utils
+
+# 인식 정확도를 높이기 위해 설정 가능한 임계치
+TOLERANCE = 0.6
 
 with mp_face_detection.FaceDetection(
     model_selection=0, min_detection_confidence=0.2) as face_detection:
@@ -54,21 +68,20 @@ with mp_face_detection.FaceDetection(
         
         face_names = []
         for face_encoding in face_encodings:
-            matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=TOLERANCE)
             name = "Unknown"
             
             face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-            best_match_index = face_distances.argmin()
-            if matches[best_match_index]:
-                name = known_face_names[best_match_index]
+            if face_distances.size > 0:
+                best_match_index = np.argmin(face_distances)
+                if matches[best_match_index]:
+                    name = known_face_names[best_match_index]
             
             face_names.append(name)
         
         # 결과 그리기
         for (top, right, bottom, left), name in zip(face_locations, face_names):
-            # 얼굴의 사각형 그리기
             cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
-            # 이름 라벨 그리기
             cv2.rectangle(image, (left, bottom - 35), (right, bottom), (0, 255, 0), cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(image, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
